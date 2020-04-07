@@ -9,9 +9,20 @@ from flask import jsonify, Request
 from google.cloud import bigquery, datastore
 from google.cloud.datastore import Entity
 
-from utils import get_request_data, validate_request_parameters, KEY_USER_ID, KEY_PLATFORM, KEY_OS_VERSION, \
-    KEY_DEVICE_TYPE, KEY_APP_VERSION, KEY_LANG, get_user_from_datastore, update_user_in_datastore, \
-    InvalidRequestException, ExtraParam
+from utils import (
+    get_request_data,
+    validate_request_parameters,
+    KEY_USER_ID,
+    KEY_PLATFORM,
+    KEY_OS_VERSION,
+    KEY_DEVICE_TYPE,
+    KEY_APP_VERSION,
+    KEY_LANG,
+    get_user_from_datastore,
+    update_user_in_datastore,
+    InvalidRequestException,
+    ExtraParam,
+)
 
 BQ_TABLE_ID = f"{os.environ['GCP_PROJECT']}.{os.environ['BQ_DATASET']}.{os.environ['BQ_TABLE']}"
 USERS_DATASTORE_KIND = "Users"
@@ -22,7 +33,6 @@ KEY_BEACON_ID = "beacon_id"
 KEY_SIGNAL_STRENGTH = "signal_strength"
 
 datastore_client = datastore.Client()
-
 
 
 def send_encounters(request):
@@ -42,10 +52,7 @@ def send_encounters(request):
     try:
         user_entity = get_user_from_datastore(user_id)
     except InvalidRequestException as e:
-        return jsonify(
-            e.response,
-            e.status
-        )
+        return jsonify(e.response), e.status
 
     upload_id = secrets.token_hex(32)
 
@@ -80,13 +87,15 @@ def _save_encounter_uploads_to_datastore(user_id: str, upload_id: str) -> None:
     uploads_key = datastore_client.key(ENCOUNTER_UPLOADS_DATASTORE_KIND, f"{upload_id}")
     entity = datastore.Entity(key=uploads_key)
 
-    entity.update({
-        'user_id': user_id,
-        'upload_id': upload_id,
-        'date': datetime.utcnow(),
-        'processed_by_health_authority': False,
-        'confirmed_by_health_authority': None,
-    })
+    entity.update(
+        {
+            "user_id": user_id,
+            "upload_id": upload_id,
+            "date": datetime.now(tz=pytz.utc),
+            "processed_by_health_authority": False,
+            "confirmed_by_health_authority": None,
+        }
+    )
     datastore_client.put(entity)
 
 
@@ -96,22 +105,14 @@ def _save_encounters_to_bigquery(user_id: str, upload_id: str, encounters: list)
 
     rows_to_insert = []
     for encounter in encounters:
-        encounter_date = datetime.strptime(encounter[KEY_ENCOUNTER_DATE], "%Y%m%d%H")
+        encounter_date = datetime.strptime(encounter[KEY_ENCOUNTER_DATE], "%Y%m%d%H").replace(tzinfo=pytz.utc)
         beacon_id = encounter[KEY_BEACON_ID]
         signal_strength = encounter[KEY_SIGNAL_STRENGTH]
-        rows_to_insert.append(
-            (
-                upload_id,
-                user_id,
-                encounter_date,
-                beacon_id,
-                signal_strength
-            )
-        )
+        rows_to_insert.append((upload_id, user_id, encounter_date, beacon_id, signal_strength))
 
     errors = bq_client.insert_rows(table, rows_to_insert)
     if errors:
-        logging.error(f'Unable to save encounters for user_id: {user_id}')
+        logging.error(f"Unable to save encounters for user_id: {user_id}")
         for e in errors:
             logging.error(e)
         return False

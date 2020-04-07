@@ -3,12 +3,24 @@ import os
 import secrets
 from datetime import datetime, timedelta
 
+import pytz
 from flask import jsonify
 from google.cloud import bigquery, datastore
 
-from utils import get_request_data, validate_request_parameters, InvalidRequestException, KEY_USER_ID, \
-    KEY_PLATFORM, KEY_OS_VERSION, KEY_DEVICE_TYPE, KEY_APP_VERSION, KEY_LANG, ExtraParam, get_user_from_datastore, \
-    update_user_in_datastore
+from utils import (
+    get_request_data,
+    validate_request_parameters,
+    InvalidRequestException,
+    KEY_USER_ID,
+    KEY_PLATFORM,
+    KEY_OS_VERSION,
+    KEY_DEVICE_TYPE,
+    KEY_APP_VERSION,
+    KEY_LANG,
+    ExtraParam,
+    get_user_from_datastore,
+    update_user_in_datastore,
+)
 
 BEACON_DATE_FORMAT = "%Y%m%d%H"
 MAX_NR_OF_BEACON_IDS = 21 * 24  # 21 days x 24 hours
@@ -31,10 +43,7 @@ def get_status(request):
         request_data = get_request_data(request)
         validate_request_parameters(request_data, extra_params=[ExtraParam(KEY_LAST_BEACON_DATE, True)])
     except InvalidRequestException as e:
-        return jsonify(
-            e.response,
-            e.status
-        )
+        return jsonify(e.response), e.status
 
     user_id = request_data[KEY_USER_ID]
     platform = request_data[KEY_PLATFORM]
@@ -47,10 +56,7 @@ def get_status(request):
     try:
         user_entity = get_user_from_datastore(user_id)
     except InvalidRequestException as e:
-        return jsonify(
-            e.response,
-            e.status
-        )
+        return jsonify(e.response), e.status
 
     beacons = _generate_beacons(last_beacon_date)
     if not _save_beacons_to_bigquery(user_id, beacons):
@@ -68,7 +74,7 @@ def get_status(request):
 
 
 def _generate_beacons(last_beacon_date_str: str) -> list:
-    now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    now = datetime.now().replace(minute=0, second=0, microsecond=0, tzinfo=pytz.utc)
     if last_beacon_date_str:
         last_beacon_date = datetime.strptime(last_beacon_date_str, BEACON_DATE_FORMAT)
     else:
